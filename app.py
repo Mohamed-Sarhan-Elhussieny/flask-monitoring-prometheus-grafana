@@ -1,115 +1,151 @@
-import os
-import secrets
+from flask import Flask, render_template, request, jsonify, redirect
+import sqlite3
 import string
+import random
 import time
-from threading import Lock
-from urllib.parse import urlparse
 
-from flask import Flask, jsonify, redirect, render_template, request
-from prometheus_client import Counter, Gauge, Histogram, generate_latest
-
+from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import Counter, Histogram
 
 app = Flask(__name__)
-
-URLS = {}
-URLS_LOCK = Lock()
-CODE_ALPHABET = string.ascii_letters + string.digits
-
-REQUEST_COUNT = Counter(
-    "url_shortener_http_requests_total",
-    "Total HTTP requests handled by the URL shortener.",
-    ["method", "endpoint", "status"],
-)
-REQUEST_LATENCY = Histogram(
-    "url_shortener_http_request_duration_seconds",
-    "HTTP request latency in seconds.",
-    ["endpoint"],
-)
-SHORTENED_URLS = Counter(
-    "url_shortener_urls_created_total",
-    "Total number of URLs shortened.",
-)
-REDIRECTS = Counter(
-    "url_shortener_redirects_total",
-    "Total number of successful URL redirects.",
-)
-STORED_URLS = Gauge(
-    "url_shortener_stored_urls",
-    "Number of URLs currently stored.",
+metrics = PrometheusMetrics(app)
+urls_shortened_total = Counter(
+    "urls_shortened_total",
+    "Total number of URLs successfully shortened"
 )
 
+successful_redirects_total = Counter(
+    "successful_redirects_total",
+    "Total number of successful redirects"
+)
 
-def is_valid_url(value):
-    parsed = urlparse(value)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+failed_lookups_total = Counter(
+    "failed_lookups_total",
+    "Total number of failed URL lookups"
+)
 
+shorten_latency = Histogram(
+    "shorten_request_latency_seconds",
+    "Latency of URL shortening requests"
+)
 
-def new_code(length=6):
-    while True:
-        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(length))
-        if code not in URLS:
-            return code
+redirect_latency = Histogram(
+    "redirect_request_latency_seconds",
+    "Latency of URL redirect requests"
+)
 
-
-@app.before_request
-def start_request_timer():
-    request._metrics_started_at = time.perf_counter()
-
-
-@app.after_request
-def record_request(response):
-    endpoint = request.endpoint or "unknown"
-    REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
-    started_at = getattr(request, "_metrics_started_at", None)
-    if started_at is not None:
-        REQUEST_LATENCY.labels(endpoint).observe(time.perf_counter() - started_at)
-    return response
-
-
-@app.get("/")
-def index():
+@app.route("/")
+def home():
     return render_template("index.html")
+DATABASE = "urls.db"
 
 
-@app.post("/shorten")
-def shorten():
-    payload = request.get_json(silent=True) or request.form
-    original_url = (payload.get("url") or "").strip()
-
-    if not is_valid_url(original_url):
-        return jsonify(error="Enter a valid http:// or https:// URL."), 400
-
-    with URLS_LOCK:
-        code = new_code()
-        URLS[code] = original_url
-        STORED_URLS.set(len(URLS))
-
-    SHORTENED_URLS.inc()
-    short_url = request.host_url.rstrip("/") + "/" + code
-    return jsonify(code=code, short_url=short_url, url=original_url), 201
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-@app.get("/<code>")
-def follow(code):
-    with URLS_LOCK:
-        destination = URLS.get(code)
+def init_db():
+    conn = get_db()
 
-    if destination is None:
-        return render_template("index.html", error="Short URL not found."), 404
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            short_code TEXT UNIQUE NOT NULL,
+            long_url TEXT NOT NULL
+        )
+    """)
 
-    REDIRECTS.inc()
-    return redirect(destination)
+    conn.commit()
+    conn.close()
 
 
-@app.get("/health")
+def generate_short_code(length=6):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
+
+
+@app.route("/shorten", methods=["POST"])
+def shorten_url():
+
+    with shorten_latency.time():
+
+        data = request.get_json()
+
+        if not data or "url" not in data:
+            return jsonify({
+                "error": "URL is required"
+            }), 400
+
+        long_url = data["url"]
+
+        short_code = generate_short_code()
+
+        conn = get_db()
+
+        while conn.execute(
+            "SELECT id FROM urls WHERE short_code = ?",
+            (short_code,)
+        ).fetchone():
+            short_code = generate_short_code()
+
+        conn.execute(
+            "INSERT INTO urls (short_code, long_url) VALUES (?, ?)",
+            (short_code, long_url)
+        )
+
+        conn.commit()
+        conn.close()
+
+        urls_shortened_total.inc()
+
+        return jsonify({
+            "short_code": short_code,
+            "short_url": f"/{short_code}"
+        }), 201
+
+
+@app.route("/<short_code>", methods=["GET"])
+def redirect_url(short_code):
+
+    with redirect_latency.time():
+
+        conn = get_db()
+
+        result = conn.execute(
+            "SELECT long_url FROM urls WHERE short_code = ?",
+            (short_code,)
+        ).fetchone()
+
+        conn.close()
+
+        if result is None:
+
+            failed_lookups_total.inc()
+
+            return jsonify({
+                "error": "Short URL not found"
+            }), 404
+
+        successful_redirects_total.inc()
+
+        return redirect(result["long_url"])
+
+
+@app.route("/health", methods=["GET"])
 def health():
-    return jsonify(status="ok", stored_urls=len(URLS))
 
-
-@app.get("/metrics")
-def metrics():
-    return generate_latest(), 200, {"Content-Type": "text/plain; version=0.0.4"}
+    return jsonify({
+        "status": "healthy"
+    }), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
+    init_db()
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False
+    )
