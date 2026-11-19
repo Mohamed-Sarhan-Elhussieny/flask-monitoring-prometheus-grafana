@@ -1,0 +1,46 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [{"expr": "url_shortener_stored_urls", "refId": "A"}],
+      "title": "Stored URLs",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [{"expr": "sum(rate(url_shortener_http_requests_total[5m]))", "refId": "A"}],
+      "title": "Request Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(url_shortener_http_request_duration_seconds_bucket[5m])) by (le))", "refId": "A"}],
+      "title": "P95 Request Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "targets": [{"expr": "sum(rate(url_shortener_redirects_total[5m]))", "refId": "A"}],
+      "title": "Redirect Rate",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "title": "URL Shortener",
+  "uid": "url-shortener",
+  "version": 1
+}

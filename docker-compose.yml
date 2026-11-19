@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    container_name: url-shortener
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: url-shortener-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: url-shortener-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./url-shortener-dashboard.json:/var/lib/grafana/dashboards/url-shortener.json:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  grafana-data:
