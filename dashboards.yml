@@ -1,11 +1,11 @@
 apiVersion: 1
 
 providers:
-  - name: URL Shortener
+  - name: "URL Shortener"
     orgId: 1
-    folder: URL Shortener
+    folder: ""
     type: file
-    disableDeletion: true
-    updateIntervalSeconds: 30
+    disableDeletion: false
+    updateIntervalSeconds: 10
     options:
       path: /var/lib/grafana/dashboards
