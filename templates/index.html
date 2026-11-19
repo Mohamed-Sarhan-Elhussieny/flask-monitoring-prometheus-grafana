@@ -1,47 +1,112 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>URL Shortener</title>
-  <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { display: grid; min-height: 100vh; place-items: center; margin: 0; background: #101827; }
-    main { width: min(92vw, 600px); padding: 2rem; border-radius: 16px; background: #1d2a3d; box-shadow: 0 16px 50px #0005; }
-    h1 { margin-top: 0; }
-    form { display: flex; gap: .75rem; }
-    input { flex: 1; min-width: 0; padding: .8rem; border: 1px solid #53657d; border-radius: 8px; }
-    button { padding: .8rem 1rem; border: 0; border-radius: 8px; color: white; background: #3478f6; cursor: pointer; }
-    #result, .error { margin-top: 1rem; }
-    a { color: #80b3ff; overflow-wrap: anywhere; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            width: 450px;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        input {
+            width: 90%;
+            padding: 12px;
+            margin: 15px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+        }
+
+        #result {
+            margin-top: 20px;
+            word-break: break-all;
+        }
+    </style>
 </head>
+
 <body>
-  <main>
+
+<div class="container">
+
     <h1>URL Shortener</h1>
-    <p>Shorten a URL and monitor the service with Prometheus and Grafana.</p>
-    <form id="shorten-form">
-      <input id="url" name="url" type="url" placeholder="https://example.com" required>
-      <button type="submit">Shorten</button>
-    </form>
-    <div id="result" aria-live="polite"></div>
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  </main>
-  <script>
-    document.querySelector("#shorten-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const result = document.querySelector("#result");
-      result.textContent = "Creating short URL...";
-      const response = await fetch("/shorten", {
+
+    <input
+        type="text"
+        id="url"
+        placeholder="Enter your long URL"
+    >
+
+    <br>
+
+    <button onclick="shortenUrl()">
+        Shorten URL
+    </button>
+
+    <div id="result"></div>
+
+</div>
+
+
+<script>
+
+async function shortenUrl() {
+
+    const url = document.getElementById("url").value;
+
+    const response = await fetch("/shorten", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({url: document.querySelector("#url").value})
-      });
-      const data = await response.json();
-      result.innerHTML = response.ok
-        ? `Short URL: <a href="${data.short_url}">${data.short_url}</a>`
-        : `<span class="error">${data.error || "Unable to shorten URL."}</span>`;
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+            url: url
+        })
     });
-  </script>
+
+    const data = await response.json();
+
+    if (response.ok) {
+
+        const shortUrl =
+            window.location.origin + data.short_url;
+
+        document.getElementById("result").innerHTML =
+            `Short URL: <a href="${shortUrl}" target="_blank">${shortUrl}</a>`;
+
+    } else {
+
+        document.getElementById("result").innerText =
+            data.error;
+    }
+}
+
+</script>
+
 </body>
 </html>
